@@ -471,8 +471,8 @@ static inline void _PyObject_GC_TRACK(
     PyGC_Head *last = (PyGC_Head*)(generation0->_gc_prev);
     _PyGCHead_SET_NEXT(last, gc);
     _PyGCHead_SET_PREV(gc, last);
-    /* Young objects will be moved into the visited space during GC, so set the bit here */
-    gc->_gc_next = ((uintptr_t)generation0) | (uintptr_t)interp->gc.visited_space;
+    uintptr_t not_visited = 1 ^ interp->gc.visited_space;
+    gc->_gc_next = ((uintptr_t)generation0) | not_visited;
     generation0->_gc_prev = (uintptr_t)gc;
 #endif
 }
@@ -835,6 +835,20 @@ extern int _PyObject_StoreInstanceAttribute(PyObject *obj,
                                             PyObject *name, PyObject *value);
 extern bool _PyObject_TryGetInstanceAttribute(PyObject *obj, PyObject *name,
                                               PyObject **attr);
+extern PyObject *_PyType_LookupRefAndVersion(PyTypeObject *, PyObject *,
+                                             unsigned int *);
+
+// Cache the provided init method in the specialization cache of type if the
+// provided type version matches the current version of the type.
+//
+// The cached value is borrowed and is only valid if guarded by a type
+// version check. In free-threaded builds the init method must also use
+// deferred reference counting.
+//
+// Returns 1 if the value was cached or 0 otherwise.
+extern int _PyType_CacheInitForSpecialization(PyHeapTypeObject *type,
+                                              PyObject *init,
+                                              unsigned int tp_version);
 
 #ifdef Py_GIL_DISABLED
 #  define MANAGED_DICT_OFFSET    (((Py_ssize_t)sizeof(PyObject *))*-1)
@@ -918,6 +932,13 @@ PyAPI_DATA(PyTypeObject) _PyNotImplemented_Type;
 PyAPI_DATA(int) _Py_SwappedOp[];
 
 extern void _Py_GetConstant_Init(void);
+
+enum _PyAnnotateFormat {
+    _Py_ANNOTATE_FORMAT_VALUE = 1,
+    _Py_ANNOTATE_FORMAT_VALUE_WITH_FAKE_GLOBALS = 2,
+    _Py_ANNOTATE_FORMAT_FORWARDREF = 3,
+    _Py_ANNOTATE_FORMAT_STRING = 4,
+};
 
 #ifdef __cplusplus
 }
